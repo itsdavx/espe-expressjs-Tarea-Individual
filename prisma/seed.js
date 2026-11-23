@@ -1,77 +1,25 @@
-require("dotenv").config();
-const { PrismaClient } = require("@prisma/client");
-const { PrismaPg } = require("@prisma/adapter-pg");
+// Datos iniciales de PostgreSQL: un administrador y un socio con contraseña cifrada.
+// Se puede correr varias veces (upsert por email).
+const bcrypt = require("bcryptjs");
+const prisma = require("../src/db/prisma");
 
-const adapter = new PrismaPg({ connectionString: process.env.DATABASE_URL });
-const prisma = new PrismaClient({ adapter });
+const usuarios = [
+  { name: "Administrador Gimnasio", email: "admin@gimnasio.com", password: "Admin123*", role: "ADMIN" },
+  { name: "Socio de Prueba", email: "socio@gimnasio.com", password: "Socio123*", role: "USER" },
+];
 
 async function main() {
-  /*   await prisma.appointment.deleteMany();
-  await prisma.timeBlock.deleteMany();
-  await prisma.user.deleteMany(); */
-
-  // Crear usuarios
-  const user1 = await prisma.user.create({
-    data: {
-      name: "Paulo Galarza",
-      email: "paulo.galarza@example.com",
-      password: "admin123",
-      role: "ADMIN",
-    },
-  });
-  const user2 = await prisma.user.create({
-    data: {
-      name: "Julian Galarza",
-      email: "julian.galarza@example.com",
-      password: "user123",
-      role: "USER",
-    },
-  });
-  // Crear bloques de tiempo
-  const timeBlock1 = await prisma.timeBlock.create({
-    data: {
-      startTime: new Date("2026-10-26T09:00:00Z"),
-      endTime: new Date("2026-10-26T11:00:00Z"),
-    },
-  });
-  const timeBlock2 = await prisma.timeBlock.create({
-    data: {
-      startTime: new Date("2026-10-26T10:00:00Z"),
-      endTime: new Date("2026-10-26T11:11:00Z"),
-    },
-  });
-  // Crear citas
-  await prisma.appointment.create({
-    data: {
-      date: new Date("2026-10-26T09:00:00Z"),
-      user: {
-        connect: {
-          id: user1.id,
-        },
-      },
-      timeBlock: {
-        connect: {
-          id: timeBlock1.id,
-        },
-      },
-    },
-  });
-  await prisma.appointment.create({
-    data: {
-      date: new Date("2026-10-26T10:00:00Z"),
-      user: {
-        connect: {
-          id: user2.id,
-        },
-      },
-      timeBlock: {
-        connect: {
-          id: timeBlock2.id,
-        },
-      },
-    },
-  });
+  for (const { password, ...datos } of usuarios) {
+    const hash = await bcrypt.hash(password, 10);
+    await prisma.user.upsert({
+      where: { email: datos.email },
+      update: { name: datos.name, role: datos.role, password: hash },
+      create: { ...datos, password: hash },
+    });
+    console.log(`Usuario listo: ${datos.email}`);
+  }
 }
+
 main()
   .catch((e) => {
     console.error(e);

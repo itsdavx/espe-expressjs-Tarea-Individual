@@ -1,4 +1,4 @@
-# Contenedores del proyecto espe-expressjs para la Unidad 2.
+# Contenedores de la tarea U2 (caso 2 · Gimnasio): PostgreSQL + pgAdmin y MongoDB.
 # PostgreSQL + pgAdmin (Unidad 1) y MongoDB (Unidad 2).
 # MongoDB Compass se instala en la PC y se conecta al contenedor "mongo".
 #
@@ -9,7 +9,7 @@
 services:
   postgres:
     image: postgres:17-alpine
-    container_name: espe-postgres
+    container_name: gym-postgres
     restart: unless-stopped
     environment:
       POSTGRES_USER: espe_user
@@ -27,7 +27,7 @@ services:
 
   pgadmin:
     image: dpage/pgadmin4:9
-    container_name: espe-pgadmin
+    container_name: gym-pgadmin
     restart: unless-stopped
     environment:
       PGADMIN_DEFAULT_EMAIL: admin@espe.com
@@ -42,7 +42,7 @@ services:
 
   mongo:
     image: mongo:8
-    container_name: espe-mongo
+    container_name: gym-mongo
     restart: unless-stopped
     environment:
       MONGO_INITDB_ROOT_USERNAME: espe_user
