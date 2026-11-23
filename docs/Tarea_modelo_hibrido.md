@@ -181,47 +181,130 @@
 
 | Relación | Cardinalidad | ¿Se lee junto? | ¿Cambia seguido? | ¿Crece sin límite? | Decisión |
 |---|---|---|---|---|---|
-| | | | | | |
+| Clase → horarios | 1:N (3 a 6 por clase) | **Sí**: el catálogo (op. 1) siempre muestra la clase con todos sus horarios | Cada temporada, y cambia **junto** con la clase: el administrador reemplaza el arreglo completo (op. 8) | No: acotado a la semana (máx. ~6) | **Embeber** `horarios: [{ dia, horaInicio, horaFin, temporada }]` |
+| Clase → equipamiento | 1:N (0 a 8 elementos) | **Sí**: se muestra en la ficha de la clase | Casi nunca | No | **Embeber** `equipamiento: [String]` |
+| Clase → Valoracion | 1:N (cientos por clase al año) | **No**: se leen **por partes**, en el detalle de la clase, las más nuevas primero y con promedio (op. 6) | Sí: se agregan ~120 por día, cada una por separado (op. 5) | **Sí**: ~43 000 por año | **Referenciar**: colección `valoraciones` con `clase: ObjectId` + `ref: "Clase"` → `populate`; índice `{ clase: 1, createdAt: -1 }` |
+| Valoracion → etiquetas | 1:N (0 a 5) | **Sí**: se muestran con la valoración | No: se escriben una sola vez con la valoración | No: máximo 5 | **Embeber** `etiquetas: [String]` |
+
+**Regla aplicada**: se embebe lo que se lee junto, cambia junto y está acotado (horarios, equipamiento, etiquetas); se referencia lo que se lee por partes, se escribe por separado y crece sin límite (valoraciones), porque embeberlo haría crecer el documento de la clase hasta el límite de 16 MB y cada valoración nueva reescribiría la clase.
 
 ## 4. ERD híbrido (notación pata de gallo, como el material 2.1)
 
 Dos zonas, PostgreSQL y MongoDB; cada entidad con sus campos y tipos; lo embebido dentro de la entidad (`campo: [Tipo]`).
 Línea continua: FK de PostgreSQL o `ref` de Mongoose. **Línea punteada: referencia entre bases** (sin FK).
-Puede entregarlo como imagen (draw.io, Lucidchart) o con Mermaid, que GitHub dibuja solo:
+**Imagen con las dos zonas** (`docs/ERD_gimnasio_hibrido.png`):
+
+![ERD híbrido · Gimnasio](ERD_gimnasio_hibrido.png)
+
+**La misma estructura en Mermaid** (GitHub la dibuja sola; los prefijos `PG_` y `MONGO_` marcan la zona):
 
 ```mermaid
 erDiagram
-  USER ||--o{ TRANSACCION : "FK userId"
-  TRANSACCION {
+  %% ===== Zona PostgreSQL (Prisma 7) =====
+  PG_USER {
     Int id PK
-    Int userId FK
-    String catalogoId "→ MongoDB"
+    String name
+    String email UK
+    String password
+    Role role "ADMIN | USER"
   }
-  CATALOGO |o..o{ TRANSACCION : "catalogoId String, sin FK"
-  CATALOGO ||--o{ REGISTRO : "ObjectId + ref"
-  TRANSACCION ||..o| REGISTRO : "transaccionId Number, sin FK"
-  REGISTRO {
+  PG_INSCRIPCION {
+    Int id PK
+    Int userId FK "→ User.id"
+    String claseId "→ MongoDB Clase._id (24 hex) · @@index"
+    DateTime fechaSesion "fecha y hora de la sesión"
+    EstadoInscripcion estado "ACTIVA | CANCELADA"
+    DateTime createdAt
+  }
+
+  %% ===== Zona MongoDB (Mongoose 9) =====
+  MONGO_CLASE {
     ObjectId _id PK
-    Number transaccionId "único → PG"
-    Number userId "→ PG"
-    String datoCopiado "copia"
+    String nombre "único"
+    String codigo UK "match, ej. SPN-01"
+    String nivel "enum: principiante | intermedio | avanzado"
+    String instructor
+    Number cupo "min 5 · max 40"
+    Number duracionMinutos
+    String descripcion
+    Horario[] horarios "embebido: dia, horaInicio, horaFin, temporada"
+    String[] equipamiento "embebido"
+    String slug "pre validate"
   }
+  MONGO_VALORACION {
+    ObjectId _id PK
+    Number inscripcionId UK "→ PG Inscripcion.id"
+    Number userId "→ PG User.id (del JWT)"
+    String nombreSocio "copia de User.name"
+    ObjectId clase FK "ref Clase → populate"
+    Number puntuacion "1 a 5"
+    String comentario
+    String[] etiquetas "embebido"
+    Date createdAt
+  }
+
+  %% Línea continua: FK de PostgreSQL o ref de Mongoose
+  PG_USER ||--o{ PG_INSCRIPCION : "FK userId"
+  MONGO_CLASE ||--o{ MONGO_VALORACION : "clase ObjectId + ref"
+
+  %% Línea punteada: referencia entre bases (sin FK, la valida el servicio)
+  MONGO_CLASE |o..o{ PG_INSCRIPCION : "claseId String, sin FK"
+  PG_INSCRIPCION ||..o| MONGO_VALORACION : "inscripcionId Number único, sin FK"
+  PG_USER ||..o{ MONGO_VALORACION : "userId Number, sin FK"
 ```
+
+**Cómo leer el diagrama**
+- **Zonas**: el prefijo `PG_` marca las entidades de **PostgreSQL** (Prisma) y `MONGO_`, las de **MongoDB** (Mongoose).
+- **Línea continua**: la relación la garantiza la base, con la FK de PostgreSQL (`userId`) o el `ref` de Mongoose (`clase`).
+- **Línea punteada**: cruza de base. No hay FK ni `populate`; la garantiza el servicio (`isValidObjectId` + `exists` en un sentido; Prisma con 404/403 en el otro).
+- `Tipo[]` dentro de la entidad: arreglo **embebido** (`horarios`, `equipamiento`, `etiquetas`).
+- `UK`: índice único (`email`, `codigo`, `inscripcionId`). En PostgreSQL, además, `@@unique([userId, claseId, fechaSesion])` evita la inscripción duplicada.
+- «copia»: `nombreSocio` es un dato desnormalizado desde PostgreSQL (ver sección 6).
 
 ## 5. Referencias
 
 | Referencia | Se guarda como | La garantiza | Se une con |
 |---|---|---|---|
-| | | | |
+| `Inscripcion.userId` → `User.id` | `Int`, **FK** de PostgreSQL | **PostgreSQL** (la FK impide una inscripción sin socio y borrar un socio con inscripciones) | `include` / JOIN de Prisma (op. 7: lista de inscritos con su nombre) |
+| `Inscripcion.claseId` → `Clase._id` | `String?` (24 hex), con `@@index([claseId])` | **El servicio**: al crear, `isValidObjectId` (400) + `Clase.exists()` (404); al borrar la clase, `prisma.inscripcion.count({ where: { claseId } })` → 409 si la usan | En el servicio: `Clase.find({ _id: { $in: ids } })` + `Map` por `_id` (2 consultas, sin N+1) |
+| `Valoracion.inscripcionId` → `Inscripcion.id` | `Number`, **índice único** | **El servicio con Prisma**: `findUnique` → 404 si no existe, 403 si no es del socio del token; el índice único → E11000 → 409 (una por inscripción) | `prisma.inscripcion.findUnique({ where: { id } })` al crear (no se une al listar) |
+| `Valoracion.userId` → `User.id` | `Number` | **El JWT**: sale de `req.user.id`, nunca del body; debe coincidir con `Inscripcion.userId` | No se une: para mostrar se usa la copia `nombreSocio` (sección 6) |
+| `Valoracion.clase` → `Clase._id` | `ObjectId` + `ref: "Clase"` | **Mongoose** (`ref`); el servicio la toma de `Inscripcion.claseId`, no del body; al borrar la clase, cascada `Valoracion.deleteMany({ clase })` | `populate("clase", "nombre nivel instructor")` |
+| `Clase.horarios` → `Horario` | Subdocumentos **embebidos** | **Mongoose** (el esquema del subdocumento valida `dia`, `horaInicio`, `horaFin`) | No se une: viene en el mismo documento de la clase |
 
 ## 6. Dato copiado entre bases (desnormalización)
 
-- Dato:
-- Por qué (operación del workload):
-- Costo:
+- **Dato**: `User.name` (PostgreSQL) se copia como `Valoracion.nombreSocio` (MongoDB) al crear la valoración. El servicio ya consulta PostgreSQL para validar la inscripción y su dueño, así que toma el nombre en la misma consulta (`include: { user: { select: { name: true } } }`).
+- **Por qué (operación del workload)**: la **op. 6** (leer las valoraciones de una clase con su promedio) se ejecuta ~**1 400 veces al día**, frente a ~120 escrituras de la op. 5. Con la copia, la lista sale de **una sola consulta a MongoDB**; sin ella, cada lectura tendría que ir también a PostgreSQL por los nombres (otra consulta con `$in` de `userId`). Además, según las suposiciones (1.3), el nombre del socio casi nunca cambia.
+- **Costo**:
+  - **Puede quedar desactualizado**: si el socio cambia su nombre, sus valoraciones viejas siguen mostrando el anterior. Se acepta porque el nombre casi no cambia y la valoración es una opinión con fecha.
+  - **Espacio extra**: ~20 bytes por valoración × ~43 000 por año ≈ 1 MB por año (despreciable).
+  - **Una responsabilidad más en la escritura**: el servicio debe copiar el dato al crear; si algún día se permite editar el nombre, habría que sincronizar con `Valoracion.updateMany({ userId }, { nombreSocio })`.
+- **Lo que NO se copia, y por qué**: el nombre y el horario de la **clase** no se copian en la inscripción. La clase cambia cada temporada (op. 8) y el historial (op. 4, ~700 por día) debe mostrar el dato actual; por eso se une con `$in` + `Map` en lugar de desnormalizar.
 
 ## 7. Endpoints
 
+🔒 = requiere `Authorization: Bearer <token>` (JWT del login, PostgreSQL). Sin token → **401**; token inválido → **403**.
+
 | Método y ruta | Base(s) | Respuestas posibles |
 |---|---|---|
-| | | |
+| **Autenticación** (ya existe) | | |
+| `POST /api/auth/register` | PostgreSQL | 201 creado · 400 datos inválidos o email repetido |
+| `POST /api/auth/login` | PostgreSQL | 200 `{ token }` · 400 credenciales inválidas |
+| **Catálogo de clases** (B2 · op. 1, 8, 9) | | |
+| `POST /api/clases` 🔒 | MongoDB | 201 clase creada · 400 validación (mensajes en español) · 401 / 403 |
+| `GET /api/clases?q=&fields=&sort=` | MongoDB | 200 lista. `q`: regex sin mayúsculas en `nombre` e `instructor`; `fields`: proyección (`nombre,nivel,cupo`); `sort`: orden (`nombre`, `-cupo`; por defecto `nombre`) |
+| `GET /api/clases/:id` | MongoDB | 200 clase (con el virtual) · 400 id inválido · 404 no existe |
+| `PUT /api/clases/:id` 🔒 | MongoDB | 200 actualizada con `findById` + `save()` (corre validaciones y `pre("validate")`) · 400 · 401 / 403 · 404 |
+| `DELETE /api/clases/:id` 🔒 | MongoDB + PostgreSQL | 200 borrada + número de valoraciones borradas en cascada · 400 · 401 / 403 · 404 · **409** si alguna inscripción de PostgreSQL usa la clase |
+| **Inscripciones** (B3 · op. 2, 3, 4) | | |
+| `POST /api/inscripciones` 🔒 | PostgreSQL + MongoDB | 201 creada (`userId` del JWT) · 400 `claseId` no es ObjectId o fecha inválida · 404 la clase no existe en MongoDB · **409** cupo lleno o ya inscrito en esa sesión |
+| `GET /api/inscripciones/mias` 🔒 | PostgreSQL + MongoDB | 200 inscripciones del socio con `nombre`, `nivel` e `instructor` de la clase, unidos con `$in` + `Map` (sin N+1) · 401 / 403 |
+| `PATCH /api/inscripciones/:id/cancelar` 🔒 | PostgreSQL | 200 `estado: CANCELADA` (libera el cupo) · 403 no es del socio · 404 · 409 ya estaba cancelada |
+| `DELETE /api/inscripciones/:id` 🔒 | PostgreSQL + MongoDB | 200 borrada + su valoración en MongoDB (sin huérfanos) · 403 no es del socio · 404 |
+| **Valoraciones** (B3 · op. 5, 6) | | |
+| `POST /api/valoraciones` 🔒 | MongoDB + PostgreSQL | 201 creada (`userId` del JWT, `nombreSocio` copiado, `clase` tomada de la inscripción) · 400 validación · **404** la inscripción no existe · **403** la inscripción no es del socio · **409** ya existe una valoración para esa inscripción (E11000) |
+| `GET /api/valoraciones?clase=` | MongoDB | 200 lista con `populate("clase", "nombre nivel")`, ordenada por `createdAt` descendente · 400 `clase` no es ObjectId |
+| `GET /api/valoraciones/resumen?clase=` | MongoDB | 200 `aggregate`: promedio de `puntuacion` y total de valoraciones por clase · 400 `clase` no es ObjectId |
+
+> La op. 7 (lista de inscritos para el instructor) queda fuera del alcance de la API de esta tarea; se resuelve con una consulta de Prisma sobre `Inscripcion` con `include: { user }`.
