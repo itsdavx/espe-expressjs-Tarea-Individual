@@ -308,3 +308,23 @@ erDiagram
 | `GET /api/valoraciones/resumen?clase=` | MongoDB | 200 `aggregate`: promedio de `puntuacion` y total de valoraciones por clase · 400 `clase` no es ObjectId |
 
 > La op. 7 (lista de inscritos para el instructor) queda fuera del alcance de la API de esta tarea; se resuelve con una consulta de Prisma sobre `Inscripcion` con `include: { user }`.
+
+## 8. Evidencia
+
+**Colección de Postman** (`postman/TareaU2_Bonilla.postman_collection.json`): 25 requests y 42 aserciones; crea sus datos y los borra al final, por eso se puede correr dos veces seguidas.
+
+![Run collection de Postman: 42 de 42 pruebas en verde](postman_run.png)
+
+**MongoDB Compass**: colección `valoraciones` con `inscripcionId` y `userId` (Number, → PostgreSQL), `nombreSocio` (copia) y `clase` (ObjectId + ref).
+
+![Compass: documentos de la colección valoraciones](compass_colecciones.png)
+
+**Índices de `valoraciones`**: `inscripcionId_1` **UNIQUE** (una valoración por inscripción → 409) y `clase_1_createdAt_-1` (lista por clase, las más nuevas primero).
+
+![Compass: índices de valoraciones](compass_indices.png)
+
+**pgAdmin**: tabla `Inscripcion` con la columna `claseId` (text) que guarda el `_id` de MongoDB. `fechaSesion` se muestra en UTC (06:00 en Ecuador = 11:00 UTC).
+
+![pgAdmin: columna claseId con el _id de MongoDB](pgadmin_claseId.png)
+
+**Datos de ejemplo**: `npm run demo` (`scripts/datos-demo.js`) carga 3 clases, 5 inscripciones y 4 valoraciones a través de la API.
