@@ -1,0 +1,1026 @@
+{
+  "info": {
+    "name": "TareaU2 · Bonilla · Gimnasio (PostgreSQL + MongoDB)",
+    "description": "Caso 2 · Gimnasio. Requisitos: docker compose up -d, npx prisma migrate dev, npx prisma db seed y npm run dev.\nLa colección crea sus propios datos y los borra al final, así que se puede correr dos veces seguidas.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    {
+      "key": "baseUrl",
+      "value": "http://localhost:3000/api"
+    },
+    {
+      "key": "fechaSesion",
+      "value": "2027-01-04T06:00:00"
+    },
+    {
+      "key": "sufijo",
+      "value": ""
+    },
+    {
+      "key": "token",
+      "value": ""
+    },
+    {
+      "key": "token2",
+      "value": ""
+    },
+    {
+      "key": "claseId",
+      "value": ""
+    },
+    {
+      "key": "inscripcionId",
+      "value": ""
+    }
+  ],
+  "event": [
+    {
+      "listen": "prerequest",
+      "script": {
+        "type": "text/javascript",
+        "exec": [
+          "// Sufijo de 3 dígitos por corrida: nombre y código de la clase no chocan con corridas anteriores",
+          "if (!pm.collectionVariables.get('sufijo')) {",
+          "  pm.collectionVariables.set('sufijo', String(Math.floor(100 + Math.random() * 900)));",
+          "}"
+        ]
+      }
+    }
+  ],
+  "item": [
+    {
+      "name": "0 · Autenticación (PostgreSQL)",
+      "item": [
+        {
+          "name": "Login socio (seed)",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.collectionVariables.set('sufijo', String(Math.floor(100 + Math.random() * 900)));"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status 200\", () => pm.response.to.have.status(200));",
+                  "pm.test(\"Devuelve un JWT\", () => pm.expect(pm.response.json().token).to.be.a(\"string\").and.not.empty);",
+                  "pm.collectionVariables.set('token', pm.response.json().token);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"socio@gimnasio.com\",\n  \"password\": \"Socio123*\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/auth/login",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "auth",
+                "login"
+              ]
+            }
+          }
+        },
+        {
+          "name": "Login administrador (seed) · segundo usuario",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status 200\", () => pm.response.to.have.status(200));",
+                  "pm.collectionVariables.set('token2', pm.response.json().token);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"admin@gimnasio.com\",\n  \"password\": \"Admin123*\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/auth/login",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "auth",
+                "login"
+              ]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "1 · Catálogo de clases (MongoDB)",
+      "item": [
+        {
+          "name": "POST clase sin token → 401",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status 401\", () => pm.response.to.have.status(401));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"nombre\": \"Spinning Postman {{sufijo}}\",\n  \"codigo\": \"SPN-{{sufijo}}\",\n  \"nivel\": \"intermedio\",\n  \"instructor\": \"Carla Mena\",\n  \"cupo\": 20,\n  \"duracionMinutos\": 45,\n  \"horarios\": [\n    {\n      \"dia\": \"miercoles\",\n      \"horaInicio\": \"18:00\",\n      \"horaFin\": \"18:45\",\n      \"temporada\": \"2027-t1\"\n    },\n    {\n      \"dia\": \"lunes\",\n      \"horaInicio\": \"06:00\",\n      \"horaFin\": \"06:45\",\n      \"temporada\": \"2027-T1\"\n    }\n  ],\n  \"equipamiento\": [\n    \"bicicleta\",\n    \"toalla\"\n  ]\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/clases",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "clases"
+              ]
+            }
+          }
+        },
+        {
+          "name": "POST clase inválida → 400",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status 400\", () => pm.response.to.have.status(400));",
+                  "const errores = pm.response.json().errores;",
+                  "pm.test(\"Mensajes de validación en español\", () => {",
+                  "  pm.expect(errores).to.include(\"El nivel «experto» no es válido (principiante, intermedio o avanzado)\");",
+                  "  pm.expect(errores).to.include(\"El instructor es obligatorio\");",
+                  "});",
+                  "pm.test(\"Validación propia: hora de fin posterior a la de inicio\", () => pm.expect(errores.join(\" \")).to.include(\"debe ser posterior a la hora de inicio\"));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"nombre\": \"Yo\",\n  \"codigo\": \"x1\",\n  \"nivel\": \"experto\",\n  \"cupo\": 50,\n  \"horarios\": [\n    {\n      \"dia\": \"lunes\",\n      \"horaInicio\": \"18:00\",\n      \"horaFin\": \"17:00\",\n      \"temporada\": \"2027-T1\"\n    }\n  ]\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/clases",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "clases"
+              ]
+            }
+          }
+        },
+        {
+          "name": "POST clase → 201",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status 201\", () => pm.response.to.have.status(201));",
+                  "const c = pm.response.json();",
+                  "pm.collectionVariables.set('claseId', c._id);",
+                  "pm.test(\"pre(validate): slug generado y horarios ordenados\", () => {",
+                  "  pm.expect(c.slug).to.eql('spinning-postman-' + pm.collectionVariables.get('sufijo'));",
+                  "  pm.expect(c.horarios[0].dia).to.eql('lunes');",
+                  "});",
+                  "pm.test(\"Virtual resumen incluido\", () => pm.expect(c.resumen).to.include(\"2 sesiones por semana\"));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"nombre\": \"Spinning Postman {{sufijo}}\",\n  \"codigo\": \"SPN-{{sufijo}}\",\n  \"nivel\": \"intermedio\",\n  \"instructor\": \"Carla Mena\",\n  \"cupo\": 20,\n  \"duracionMinutos\": 45,\n  \"horarios\": [\n    {\n      \"dia\": \"miercoles\",\n      \"horaInicio\": \"18:00\",\n      \"horaFin\": \"18:45\",\n      \"temporada\": \"2027-t1\"\n    },\n    {\n      \"dia\": \"lunes\",\n      \"horaInicio\": \"06:00\",\n      \"horaFin\": \"06:45\",\n      \"temporada\": \"2027-T1\"\n    }\n  ],\n  \"equipamiento\": [\n    \"bicicleta\",\n    \"toalla\"\n  ]\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/clases",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "clases"
+              ]
+            }
+          }
+        },
+        {
+          "name": "GET clases ?q= (regex sin mayúsculas)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status 200\", () => pm.response.to.have.status(200));",
+                  "pm.test(\"Encuentra la clase creada\", () => pm.expect(pm.response.json().clases.map(c => c._id)).to.include(pm.collectionVariables.get(\"claseId\")));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/clases?q=SPINNING POSTMAN {{sufijo}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "clases"
+              ],
+              "query": [
+                {
+                  "key": "q",
+                  "value": "SPINNING POSTMAN {{sufijo}}"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "GET clases ?fields= y ?sort= (proyección y orden)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status 200\", () => pm.response.to.have.status(200));",
+                  "const lista = pm.response.json().clases;",
+                  "pm.test(\"Proyección: solo nombre y cupo\", () => { pm.expect(lista[0]).to.have.property(\"cupo\"); pm.expect(lista[0]).to.not.have.property(\"instructor\"); });",
+                  "pm.test(\"Orden descendente por cupo\", () => { for (let i = 1; i < lista.length; i++) pm.expect(lista[i - 1].cupo).to.be.at.least(lista[i].cupo); });"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/clases?fields=nombre,cupo&sort=-cupo",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "clases"
+              ],
+              "query": [
+                {
+                  "key": "fields",
+                  "value": "nombre,cupo"
+                },
+                {
+                  "key": "sort",
+                  "value": "-cupo"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "GET clase id inválido → 400",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status 400\", () => pm.response.to.have.status(400));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/clases/123",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "clases",
+                "123"
+              ]
+            }
+          }
+        },
+        {
+          "name": "GET clase inexistente → 404",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status 404\", () => pm.response.to.have.status(404));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/clases/650000000000000000000000",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "clases",
+                "650000000000000000000000"
+              ]
+            }
+          }
+        },
+        {
+          "name": "PUT clase inválida → 400",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status 400\", () => pm.response.to.have.status(400));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"cupo\": 3\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/clases/{{claseId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "clases",
+                "{{claseId}}"
+              ]
+            }
+          }
+        },
+        {
+          "name": "PUT clase (findById + save) → 200",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status 200\", () => pm.response.to.have.status(200));",
+                  "pm.test(\"Cupo actualizado\", () => pm.expect(pm.response.json().cupo).to.eql(25));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"cupo\": 25\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/clases/{{claseId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "clases",
+                "{{claseId}}"
+              ]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "2 · Inscripciones (PostgreSQL validando MongoDB)",
+      "item": [
+        {
+          "name": "POST inscripción con clase inexistente → 404",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status 404\", () => pm.response.to.have.status(404));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"claseId\": \"650000000000000000000000\",\n  \"fechaSesion\": \"{{fechaSesion}}\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/inscripciones",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "inscripciones"
+              ]
+            }
+          }
+        },
+        {
+          "name": "POST inscripción → 201",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status 201\", () => pm.response.to.have.status(201));",
+                  "const i = pm.response.json();",
+                  "pm.collectionVariables.set('inscripcionId', i.id);",
+                  "pm.test(\"Guarda el _id de MongoDB como String y queda ACTIVA\", () => { pm.expect(i.claseId).to.eql(pm.collectionVariables.get(\"claseId\")); pm.expect(i.estado).to.eql(\"ACTIVA\"); });"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"claseId\": \"{{claseId}}\",\n  \"fechaSesion\": \"{{fechaSesion}}\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/inscripciones",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "inscripciones"
+              ]
+            }
+          }
+        },
+        {
+          "name": "POST inscripción duplicada → 409",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status 409\", () => pm.response.to.have.status(409));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"claseId\": \"{{claseId}}\",\n  \"fechaSesion\": \"{{fechaSesion}}\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/inscripciones",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "inscripciones"
+              ]
+            }
+          }
+        },
+        {
+          "name": "GET mis inscripciones ($in + Map)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status 200\", () => pm.response.to.have.status(200));",
+                  "const fila = pm.response.json().inscripciones.find(i => i.id == pm.collectionVariables.get('inscripcionId'));",
+                  "pm.test(\"Une el nombre de la clase desde MongoDB\", () => pm.expect(fila.clase.nombre).to.include(\"Spinning Postman\"));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/inscripciones/mias",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "inscripciones",
+                "mias"
+              ]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "3 · Valoraciones (MongoDB validando PostgreSQL)",
+      "item": [
+        {
+          "name": "POST valoración de inscripción inexistente → 404",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status 404\", () => pm.response.to.have.status(404));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"inscripcionId\": 999999,\n  \"puntuacion\": 5\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/valoraciones",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "valoraciones"
+              ]
+            }
+          }
+        },
+        {
+          "name": "POST valoración de inscripción ajena → 403",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status 403\", () => pm.response.to.have.status(403));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token2}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"inscripcionId\": \"{{inscripcionId}}\",\n  \"puntuacion\": 5\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/valoraciones",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "valoraciones"
+              ]
+            }
+          }
+        },
+        {
+          "name": "POST valoración → 201",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status 201\", () => pm.response.to.have.status(201));",
+                  "const v = pm.response.json();",
+                  "pm.test(\"Copia nombreSocio desde PostgreSQL\", () => pm.expect(v.nombreSocio).to.eql(\"Socio de Prueba\"));",
+                  "pm.test(\"El userId sale del JWT, no del body\", () => pm.expect(v.userId).to.not.eql(999));",
+                  "pm.test(\"La clase se toma de la inscripción\", () => pm.expect(v.clase).to.eql(pm.collectionVariables.get(\"claseId\")));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"inscripcionId\": \"{{inscripcionId}}\",\n  \"puntuacion\": 4,\n  \"comentario\": \"Exigente y puntual\",\n  \"etiquetas\": [\n    \"intensa\",\n    \"puntual\"\n  ],\n  \"userId\": 999\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/valoraciones",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "valoraciones"
+              ]
+            }
+          }
+        },
+        {
+          "name": "POST valoración repetida (E11000) → 409",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status 409\", () => pm.response.to.have.status(409));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"inscripcionId\": \"{{inscripcionId}}\",\n  \"puntuacion\": 5\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/valoraciones",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "valoraciones"
+              ]
+            }
+          }
+        },
+        {
+          "name": "GET valoraciones de la clase (populate + orden)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status 200\", () => pm.response.to.have.status(200));",
+                  "pm.test(\"populate trae el nombre de la clase\", () => pm.expect(pm.response.json().valoraciones[0].clase.nombre).to.include(\"Spinning Postman\"));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/valoraciones?clase={{claseId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "valoraciones"
+              ],
+              "query": [
+                {
+                  "key": "clase",
+                  "value": "{{claseId}}"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "GET resumen (aggregate: promedio y total)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status 200\", () => pm.response.to.have.status(200));",
+                  "pm.test(\"Promedio 4 con 1 valoración\", () => { const r = pm.response.json()[0]; pm.expect(r.promedio).to.eql(4); pm.expect(r.total).to.eql(1); });"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/valoraciones/resumen?clase={{claseId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "valoraciones",
+                "resumen"
+              ],
+              "query": [
+                {
+                  "key": "clase",
+                  "value": "{{claseId}}"
+                }
+              ]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "4 · Borrado protegido y limpieza",
+      "item": [
+        {
+          "name": "DELETE clase usada en PostgreSQL → 409",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status 409\", () => pm.response.to.have.status(409));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "DELETE",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/clases/{{claseId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "clases",
+                "{{claseId}}"
+              ]
+            }
+          }
+        },
+        {
+          "name": "DELETE inscripción (borra también su valoración) → 200",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status 200\", () => pm.response.to.have.status(200));",
+                  "pm.test(\"Cascada en MongoDB: 1 valoración borrada\", () => pm.expect(pm.response.json().valoracionesEliminadas).to.eql(1));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "DELETE",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/inscripciones/{{inscripcionId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "inscripciones",
+                "{{inscripcionId}}"
+              ]
+            }
+          }
+        },
+        {
+          "name": "DELETE clase sin inscripciones → 200",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status 200\", () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "DELETE",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/clases/{{claseId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "clases",
+                "{{claseId}}"
+              ]
+            }
+          }
+        },
+        {
+          "name": "GET clase borrada → 404 (datos limpios)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status 404\", () => pm.response.to.have.status(404));",
+                  "pm.collectionVariables.set('sufijo', '');"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/clases/{{claseId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "clases",
+                "{{claseId}}"
+              ]
+            }
+          }
+        }
+      ]
+    }
+  ]
+}
