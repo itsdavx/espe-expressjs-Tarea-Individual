@@ -15,6 +15,14 @@ const handleError = (res, error, next) => {
     const campos = Object.keys(error.keyValue || error.keyPattern || {}).join(", ");
     return res.status(409).json({ error: `Ya existe un registro con el mismo valor en: ${campos}` });
   }
+  if (error.code === "P2002") {
+    // Prisma: se violó una restricción única de PostgreSQL
+    return res.status(409).json({ error: "Ya existe un registro con esos datos" });
+  }
+  if (error.code === "P2034") {
+    // Prisma: choque de transacciones Serializable (dos operaciones a la vez)
+    return res.status(409).json({ error: "Otra operación modificó los mismos datos al mismo tiempo; intenta de nuevo" });
+  }
   return next(error); // 500 en el errorHandler global
 };
 

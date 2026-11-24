@@ -1,6 +1,8 @@
 // Lógica del catálogo de clases (MongoDB). No conoce req ni res: recibe datos y devuelve documentos.
 const { isValidObjectId } = require("mongoose");
 const Clase = require("../models/clase");
+const Valoracion = require("../models/valoracion");
+const prisma = require("../db/prisma");
 const HttpError = require("../utils/httpError");
 
 const CAMPOS_ORDEN = ["nombre", "codigo", "nivel", "instructor", "cupo", "duracionMinutos", "createdAt"];
@@ -59,11 +61,21 @@ const actualizarClase = async (id, datos) => {
   return clase.save();
 };
 
-// DELETE /api/clases/:id
+// DELETE /api/clases/:id · borrado protegido
+// 1) Si PostgreSQL tiene inscripciones con este claseId → 409 (se perdería el historial).
+// 2) Si no, cascada en MongoDB: primero sus valoraciones (lo que depende), después la clase.
+//    Si falla a la mitad, puede quedar la clase sin valoraciones, pero nunca valoraciones huérfanas.
 const eliminarClase = async (id) => {
   const clase = await obtenerClase(id);
+
+  const inscripciones = await prisma.inscripcion.count({ where: { claseId: String(clase._id) } });
+  if (inscripciones > 0) {
+    throw new HttpError(409, `No se puede eliminar: la clase tiene ${inscripciones} inscripción(es) en PostgreSQL`);
+  }
+
+  const { deletedCount } = await Valoracion.deleteMany({ clase: clase._id });
   await clase.deleteOne();
-  return clase;
+  return { clase, valoracionesEliminadas: deletedCount };
 };
 
 module.exports = { crearClase, listarClases, obtenerClase, actualizarClase, eliminarClase };

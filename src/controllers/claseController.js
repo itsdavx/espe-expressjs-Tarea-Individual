@@ -41,8 +41,8 @@ const actualizarClase = async (req, res, next) => {
 
 const eliminarClase = async (req, res, next) => {
   try {
-    const clase = await claseService.eliminarClase(req.params.id);
-    res.json({ mensaje: "Clase eliminada", clase });
+    const resultado = await claseService.eliminarClase(req.params.id);
+    res.json({ mensaje: "Clase eliminada", ...resultado });
   } catch (error) {
     handleError(res, error, next);
   }
